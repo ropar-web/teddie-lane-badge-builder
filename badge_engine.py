@@ -343,10 +343,13 @@ def _corner_records(contours: list[list[tuple[float, float]]], simplify: bool = 
 
 
 def _text_contours(text: str, font_name: str, center_x: float, center_y: float, target_height: float, max_width: float):
-    data, chars, advances, spacing, width = _text_metrics(text, font_name)
-    text_scale = min(target_height / (data["ascender"] - data["descender"]), max_width / width)
-    cursor = center_x - width * text_scale / 2
-    baseline = center_y + (data["ascender"] + data["descender"]) * text_scale / 2
+    data, chars, advances, spacing, width, bounds = _text_layout(text, font_name)
+    min_x, min_y, max_x, max_y = bounds
+    ink_height = max(max_y - min_y, 1)
+    fit_width = max(width, max_x - min_x, 1)
+    text_scale = min(target_height / ink_height, max_width / fit_width)
+    cursor = center_x - (min_x + max_x) * text_scale / 2
+    baseline = center_y + (min_y + max_y) * text_scale / 2
     contours = []
     for char, advance in zip(chars, advances):
         glyph_name = data["cmap"].get(ord(char), ".notdef")
@@ -461,15 +464,20 @@ def _rounding_markup(component: str, values: dict) -> str | None:
     return f'<path d="{path}" fill-rule="evenodd"/>' if path else ""
 
 
-def _clean_text(value: str, fallback: str, limit: int) -> str:
-    allowed = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789&-'./ "
-    cleaned = "".join(char for char in (value or fallback).upper() if char in allowed)
-    return cleaned[:limit] or fallback
+def _supported_text(value: str, font_name: str, limit: int) -> str:
+    cmap = _font_data(font_name)["cmap"]
+    replacements = str.maketrans({"’": "'", "‘": "'", "“": '"', "”": '"', "–": "-", "—": "-"})
+    source = (value or "").translate(replacements)
+    return "".join(char for char in source if char == " " or ord(char) in cmap)[:limit]
 
 
-def _clean_optional_text(value: str, limit: int) -> str:
-    allowed = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789&-'./ "
-    return "".join(char for char in (value or "").upper() if char in allowed)[:limit]
+def _clean_text(value: str, fallback: str, limit: int, font_name: str) -> str:
+    cleaned = _supported_text(value or fallback, font_name, limit)
+    return cleaned or _supported_text(fallback, font_name, limit)
+
+
+def _clean_optional_text(value: str, limit: int, font_name: str) -> str:
+    return _supported_text(value, font_name, limit)
 
 
 def _text_metrics(text: str, font_name: str) -> tuple[dict, list[str], list[float], float, float]:
@@ -484,17 +492,42 @@ def _text_metrics(text: str, font_name: str) -> tuple[dict, list[str], list[floa
     return data, chars, advances, spacing, max(width, 1)
 
 
+def _text_layout(text: str, font_name: str):
+    data, chars, advances, spacing, width = _text_metrics(text, font_name)
+    cursor = 0.0
+    glyph_bounds = []
+    for char, advance in zip(chars, advances):
+        glyph_name = data["cmap"].get(ord(char), ".notdef")
+        pen = BoundsPen(data["glyph_set"])
+        data["glyph_set"][glyph_name].draw(pen)
+        if pen.bounds:
+            min_x, min_y, max_x, max_y = pen.bounds
+            glyph_bounds.append((min_x + cursor, min_y, max_x + cursor, max_y))
+        cursor += advance + spacing
+    if glyph_bounds:
+        bounds = (
+            min(item[0] for item in glyph_bounds), min(item[1] for item in glyph_bounds),
+            max(item[2] for item in glyph_bounds), max(item[3] for item in glyph_bounds),
+        )
+    else:
+        bounds = (0.0, data["descender"], width, data["ascender"])
+    return data, chars, advances, spacing, width, bounds
+
+
 def text_width_mm(text: str, font_name: str, target_height: float) -> float:
-    data, _, _, _, width = _text_metrics(text, font_name)
-    scale = target_height / (data["ascender"] - data["descender"])
-    return width * scale
+    _, _, _, _, width, (min_x, min_y, max_x, max_y) = _text_layout(text, font_name)
+    scale = target_height / max(max_y - min_y, 1)
+    return max(width, max_x - min_x) * scale
 
 
 def vector_text(text: str, font_name: str, center_x: float, center_y: float, target_height: float, max_width: float) -> str:
-    data, chars, advances, spacing, width = _text_metrics(text, font_name)
-    scale = min(target_height / (data["ascender"] - data["descender"]), max_width / width)
-    cursor = center_x - width * scale / 2
-    baseline = center_y + (data["ascender"] + data["descender"]) * scale / 2
+    data, chars, advances, spacing, width, bounds = _text_layout(text, font_name)
+    min_x, min_y, max_x, max_y = bounds
+    ink_height = max(max_y - min_y, 1)
+    fit_width = max(width, max_x - min_x, 1)
+    scale = min(target_height / ink_height, max_width / fit_width)
+    cursor = center_x - (min_x + max_x) * scale / 2
+    baseline = center_y + (min_y + max_y) * scale / 2
     paths = []
     for char, advance in zip(chars, advances):
         glyph_name = data["cmap"].get(ord(char), ".notdef")
@@ -521,10 +554,10 @@ def badge_values(
     extra_size: int = 100, extra_x: float = 0.0, extra_y: float = 0.0,
 ) -> dict:
     shape = SHAPES[shape_name]
-    clean_name = _clean_text(name, "NAME", 24)
-    clean_name2 = _clean_optional_text(name2, 24)
-    clean_profession = _clean_text(profession, "PROFESSION", 32)
-    clean_extra = _clean_optional_text(extra_text, 32)
+    clean_name = _clean_text(name, "NAME", 24, name_font)
+    clean_name2 = _clean_optional_text(name2, 24, name2_font)
+    clean_profession = _clean_text(profession, "PROFESSION", 32, profession_font)
+    clean_extra = _clean_optional_text(extra_text, 32, extra_font)
     base_width = shape["width"]
     body_width = shape.get("body_width", base_width)
     available_name_width = body_width * shape.get("text_width", 0.64 if symbol_name != "No symbol" else 0.78)

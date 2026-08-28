@@ -99,10 +99,10 @@ for key, value in CONTENT_DEFAULTS.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
-name = st.session_state.get("content_name", "AMELIA").upper()
-name2 = st.session_state.get("content_name2", "").upper()
-profession = st.session_state.get("content_profession", "ENROLLED NURSE").upper()
-extra_text = st.session_state.get("content_extra", "").upper()
+name = st.session_state.get("content_name", "AMELIA")
+name2 = st.session_state.get("content_name2", "")
+profession = st.session_state.get("content_profession", "ENROLLED NURSE")
+extra_text = st.session_state.get("content_extra", "")
 shape_name = st.session_state.get("content_shape", next(iter(SHAPES)))
 symbol_name = st.session_state.get("content_symbol", next(iter(SYMBOLS)))
 base_colour = st.session_state.get("content_colour", "#ed7594")
@@ -185,7 +185,12 @@ if st.session_state["touch_mode"]:
     if touch_result and touch_result.get("nonce") != st.session_state.get("last_touch_nonce"):
         st.session_state["last_touch_nonce"] = touch_result.get("nonce")
         changed_component = touch_result.get("component")
-        if touch_result.get("action") == "delete" and changed_component != "base":
+        confirmed_delete = (
+            touch_result.get("action") == "delete"
+            and touch_result.get("confirmDelete") is True
+            and touch_result.get("deleteToken") == f"DELETE:{changed_component}"
+        )
+        if confirmed_delete and changed_component != "base":
             hidden_components.add(changed_component)
             st.session_state["hidden_components"] = sorted(hidden_components)
         elif touch_result.get("action") == "update" and changed_component in COMPONENT_PREFIX:
@@ -227,6 +232,7 @@ with st.expander("1. Text, shape and fonts", expanded=True):
         st.selectbox("Profession font", font_names, key="content_profession_font")
         st.text_input("Additional text (optional)", max_chars=32, key="content_extra")
         st.selectbox("Additional text font", font_names, key="content_extra_font", disabled=not extra_text)
+        st.caption("Ruby accepts uppercase, lowercase, numbers and the supplied punctuation. Letter case is kept exactly as typed.")
         if "Consolas" not in FONT_FILES:
             st.caption("To enable exact Consolas, upload your licensed file as Consolas.ttf beside app.py.")
 
