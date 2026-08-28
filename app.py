@@ -25,78 +25,117 @@ st.markdown(
 st.markdown('<div class="badge-kicker">Teddie &amp; Lane</div><div class="badge-title">Badge Builder</div>', unsafe_allow_html=True)
 st.caption("Exact vector shapes • separate Tinkercad-ready SVG parts • native downloads")
 
-with st.sidebar:
-    st.header("Badge details")
-    name = st.text_input("Name", value="AMELIA", max_chars=24).upper()
-    profession = st.text_input("Profession", value="ENROLLED NURSE", max_chars=32).upper()
-    shape_name = st.selectbox("Badge shape", list(SHAPES))
-    name_font = st.selectbox("Name font", [name for name in FONT_FILES if name != "Barlow Condensed SemiBold"])
-    symbol_name = st.selectbox("Symbol", list(SYMBOLS))
-    auto_enlarge = st.toggle("Enlarge proportionally for long names", value=True)
-    base_colour = st.color_picker("Base colour", "#ed7594")
+with st.expander("1. Badge content and fonts", expanded=True):
+    content_left, content_right = st.columns(2)
+    with content_left:
+        shape_name = st.selectbox("Badge shape", list(SHAPES))
+        symbol_name = st.selectbox("Symbol", list(SYMBOLS))
+        base_colour = st.color_picker("Base colour", "#ed7594")
+        auto_enlarge = st.toggle("Enlarge proportionally for long names", value=True)
+    with content_right:
+        name = st.text_input("Name — line 1", value="AMELIA", max_chars=24).upper()
+        name_font = st.selectbox("Name line 1 font", list(FONT_FILES), key="name_font")
+        name2 = st.text_input("Name — line 2 (optional)", value="", max_chars=24).upper()
+        name2_font = st.selectbox("Name line 2 font", list(FONT_FILES), key="name2_font", disabled=not name2)
+        profession = st.text_input("Profession", value="ENROLLED NURSE", max_chars=32).upper()
+        profession_font = st.selectbox("Profession font", list(FONT_FILES), index=list(FONT_FILES).index("Barlow Condensed SemiBold"), key="profession_font")
+        extra_text = st.text_input("Additional text line (optional)", value="", max_chars=32).upper()
+        extra_font = st.selectbox("Additional text font", list(FONT_FILES), index=list(FONT_FILES).index("Barlow Condensed SemiBold"), key="extra_font", disabled=not extra_text)
 
-    with st.expander("Fine-tune size and position"):
-        st.caption("The preview and downloaded SVG files use these exact adjustments.")
-        symbol_size = st.slider("Symbol size (%)", 50, 160, 100, disabled=symbol_name == "No symbol")
-        symbol_x = st.slider("Symbol left / right (mm)", -20.0, 20.0, 0.0, 0.5, disabled=symbol_name == "No symbol")
-        symbol_y = st.slider("Symbol up / down (mm)", -15.0, 15.0, 0.0, 0.5, disabled=symbol_name == "No symbol")
-        name_size = st.slider("Name size (%)", 60, 140, 100)
-        name_x = st.slider("Name left / right (mm)", -15.0, 15.0, 0.0, 0.5)
-        name_y = st.slider("Name up / down (mm)", -10.0, 10.0, 0.0, 0.5)
-        profession_size = st.slider("Profession size (%)", 60, 140, 100)
-        profession_x = st.slider("Profession left / right (mm)", -15.0, 15.0, 0.0, 0.5)
-        profession_y = st.slider("Profession up / down (mm)", -10.0, 10.0, 0.0, 0.5)
+adjustment_options = {"Badge overall": "base"}
+if SHAPES[shape_name].get("white"):
+    adjustment_options["White border"] = "border"
+adjustment_options["Name line 1"] = "name"
+if name2:
+    adjustment_options["Name line 2"] = "name2"
+adjustment_options["Profession"] = "profession"
+if extra_text:
+    adjustment_options["Additional text"] = "extra_text"
+if symbol_name != "No symbol":
+    adjustment_options["Symbol"] = "symbol"
+
+with st.expander("2. Size and position controls", expanded=True):
+    st.caption("Open a component tab, then change its size and position. Every tab keeps its own values.")
+    adjustment_tabs = st.tabs(list(adjustment_options))
+    for tab, (adjust_label, adjust_component) in zip(adjustment_tabs, adjustment_options.items()):
+        with tab:
+            if adjust_component == "base":
+                st.slider("Badge overall size (%)", 70, 150, 100, key="badge_size")
+                st.caption("The base defines the SVG canvas, so it remains centred. All other parts can move independently.")
+            else:
+                prefix = {"border": "border", "name": "name", "name2": "name2", "profession": "profession", "extra_text": "extra", "symbol": "symbol"}[adjust_component]
+                minimum_size, maximum_size = ((50, 160) if adjust_component in ("border", "symbol") else (40, 180))
+                st.slider(f"{adjust_label} size (%)", minimum_size, maximum_size, 100, key=f"{prefix}_size")
+                st.slider(f"{adjust_label} left / right (mm)", -25.0, 25.0, 0.0, 0.25, key=f"{prefix}_x")
+                st.slider(f"{adjust_label} up / down (mm)", -20.0, 20.0, 0.0, 0.25, key=f"{prefix}_y")
+
+def saved(key, default):
+    return st.session_state.get(key, default)
+
+badge_size = saved("badge_size", 100)
+border_size, border_x, border_y = saved("border_size", 100), saved("border_x", 0.0), saved("border_y", 0.0)
+symbol_size, symbol_x, symbol_y = saved("symbol_size", 100), saved("symbol_x", 0.0), saved("symbol_y", 0.0)
+name_size, name_x, name_y = saved("name_size", 100), saved("name_x", 0.0), saved("name_y", 0.0)
+name2_size, name2_x, name2_y = saved("name2_size", 100), saved("name2_x", 0.0), saved("name2_y", 0.0)
+profession_size, profession_x, profession_y = saved("profession_size", 100), saved("profession_x", 0.0), saved("profession_y", 0.0)
+extra_size, extra_x, extra_y = saved("extra_size", 100), saved("extra_x", 0.0), saved("extra_y", 0.0)
 
 values = badge_values(
     name, profession, shape_name, name_font, symbol_name, auto_enlarge,
+    profession_font=profession_font, name2=name2, name2_font=name2_font,
+    extra_text=extra_text, extra_font=extra_font, badge_size=badge_size,
+    border_size=border_size, border_x=border_x, border_y=border_y,
     symbol_size=symbol_size, symbol_x=symbol_x, symbol_y=symbol_y,
     name_size=name_size, name_x=name_x, name_y=name_y,
+    name2_size=name2_size, name2_x=name2_x, name2_y=name2_y,
     profession_size=profession_size, profession_x=profession_x, profession_y=profession_y,
+    extra_size=extra_size, extra_x=extra_x, extra_y=extra_y,
 )
 
-with st.sidebar:
-    with st.expander("Corner & edge editor", expanded=False):
-        st.caption("Edit one component at a time. Every component remembers its own settings.")
-        component_options = {"Badge shape": "base"}
-        if SHAPES[shape_name].get("white"):
-            component_options["White border"] = "border"
-        component_options["Name text"] = "name"
-        component_options["Profession text"] = "profession"
-        if symbol_name != "No symbol":
-            component_options["Symbol"] = "symbol"
+with st.expander("3. Corner and edge editor", expanded=False):
+    st.caption("Each component has its own tab and keeps its own rounding settings.")
+    component_options = {"Badge shape": "base"}
+    if SHAPES[shape_name].get("white"):
+        component_options["White border"] = "border"
+    component_options["Name line 1"] = "name"
+    if name2:
+        component_options["Name line 2"] = "name2"
+    component_options["Profession"] = "profession"
+    if extra_text:
+        component_options["Additional text"] = "extra_text"
+    if symbol_name != "No symbol":
+        component_options["Symbol"] = "symbol"
 
-        component_label = st.selectbox("Selected component", list(component_options))
-        selected_component = component_options[component_label]
-        mode = st.radio(
-            "Apply rounding to",
-            ["Whole component", "Selected corners"],
-            horizontal=True,
-            key=f"round_mode_{selected_component}",
-        )
-        radius = st.slider(
-            "Round / smooth amount (mm)",
-            0.0,
-            3.0,
-            0.0,
-            0.1,
-            key=f"round_radius_{selected_component}",
-            help="0 keeps the original SVG exactly. Increase gradually for softer corners and edges.",
-        )
-        corner_count = len(component_corner_points(selected_component, values))
-        if mode == "Selected corners":
-            corner_choices = [str(number) for number in range(1, corner_count + 1)]
-            st.multiselect(
-                "Corners to round",
-                corner_choices,
-                key=f"round_corners_{selected_component}",
-                help="The matching numbers appear on the live preview.",
+    corner_tabs = st.tabs(list(component_options))
+    for tab, (component_label, component_key) in zip(corner_tabs, component_options.items()):
+        with tab:
+            component_mode = st.radio(
+                "Apply rounding to",
+                ["Whole component", "Selected corners"],
+                horizontal=True,
+                key=f"round_mode_{component_key}",
             )
-            st.caption(f"{corner_count} selectable corners found. Choose their numbers in the preview.")
-        else:
-            st.caption("All detected corners and sharp edge changes on this component will be softened.")
+            st.slider(
+                "Round / smooth amount (mm)", 0.0, 3.0, 0.0, 0.1,
+                key=f"round_radius_{component_key}",
+                help="0 keeps the original SVG exactly. Increase gradually for softer corners and edges.",
+            )
+            corner_count = len(component_corner_points(component_key, values))
+            if component_mode == "Selected corners":
+                st.multiselect(
+                    "Corners to round",
+                    [str(number) for number in range(1, corner_count + 1)],
+                    key=f"round_corners_{component_key}",
+                    help="Use the numbered corner map below the main preview.",
+                )
+                st.caption(f"{corner_count} selectable corners found.")
+            else:
+                st.caption("All detected sharp corners on this component will be softened.")
+    corner_map_label = st.selectbox("Numbered corner map component", list(component_options), key="corner_map_component")
+    selected_component = component_options[corner_map_label]
 
 rounding = {}
-for component in ("base", "border", "name", "profession", "symbol"):
+for component in ("base", "border", "name", "name2", "profession", "extra_text", "symbol"):
     saved_mode = st.session_state.get(f"round_mode_{component}", "Whole component")
     saved_corners = st.session_state.get(f"round_corners_{component}", [])
     rounding[component] = {
@@ -105,7 +144,7 @@ for component in ("base", "border", "name", "profession", "symbol"):
         "corners": [int(number) - 1 for number in saved_corners],
     }
 values["rounding"] = rounding
-marker_component = selected_component if mode == "Selected corners" else None
+marker_component = selected_component if rounding[selected_component]["mode"] == "Selected corners" else None
 
 left, right = st.columns([1.5, 1], gap="large")
 with left:
@@ -123,7 +162,7 @@ with left:
         scrolling=False,
     )
     if marker_component:
-        st.caption(f"Numbered corner map — {component_label}")
+        st.caption(f"Numbered corner map — {corner_map_label}")
         components.html(
             '<div style="background:#fffaf7;border:1px solid #eaded8;border-radius:18px;padding:14px;display:grid;place-items:center;">'
             + corner_editor_svg(marker_component, values)

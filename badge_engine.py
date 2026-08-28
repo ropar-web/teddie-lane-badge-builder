@@ -167,9 +167,11 @@ SYMBOLS = {
 LAYER_FILES = {
     "base": "01_BASE.svg",
     "border": "02_WHITE_BORDER.svg",
-    "name": "03_NAME.svg",
-    "profession": "04_PROFESSION.svg",
-    "symbol": "05_SYMBOL.svg",
+    "name": "03_NAME_LINE_1.svg",
+    "name2": "04_NAME_LINE_2.svg",
+    "profession": "05_PROFESSION.svg",
+    "extra_text": "06_EXTRA_TEXT.svg",
+    "symbol": "07_SYMBOL.svg",
 }
 
 
@@ -359,7 +361,15 @@ def _component_contours(component: str, values: dict):
     if component in ("base", "border"):
         base_path, white_paths = _shape_paths(values["shape"])
         paths = (base_path,) if component == "base" else white_paths
-        transform = (badge_scale, 0, 0, badge_scale, -shape["min_x"] * badge_scale, -shape["min_y"] * badge_scale)
+        part_scale = 1.0 if component == "base" else values["border_size"] / 100
+        center_x, center_y = values["width"] / 2, values["height"] / 2
+        tx = -shape["min_x"] * badge_scale
+        ty = -shape["min_y"] * badge_scale
+        transform = (
+            badge_scale * part_scale, 0, 0, badge_scale * part_scale,
+            center_x + values.get("border_x", 0.0) - center_x * part_scale + tx * part_scale,
+            center_y + values.get("border_y", 0.0) - center_y * part_scale + ty * part_scale,
+        )
         return [contour for path in paths for contour in _flatten_path(path, transform)]
     if component == "symbol":
         if values["symbol"] == "No symbol":
@@ -377,9 +387,14 @@ def _component_contours(component: str, values: dict):
     body_width = shape.get("body_width", shape["width"]) * badge_scale
     text_width = body_width * shape.get("text_width", 0.625 if has_symbol else 0.78)
     if component == "name":
-        return _text_contours(values["name"], values["name_font"], default_center + values["name_x"], values["height"] * 0.40 + values["name_y"], min(12.0, shape["height"] * 0.30) * badge_scale * values["name_size"] / 100, text_width)
+        default_y = 0.33 if values.get("name2") else 0.40
+        return _text_contours(values["name"], values["name_font"], default_center + values["name_x"], values["height"] * default_y + values["name_y"], min(12.0, shape["height"] * 0.30) * badge_scale * values["name_size"] / 100, text_width)
+    if component == "name2":
+        return _text_contours(values.get("name2", ""), values["name2_font"], default_center + values["name2_x"], values["height"] * 0.50 + values["name2_y"], min(10.5, shape["height"] * 0.25) * badge_scale * values["name2_size"] / 100, text_width)
     if component == "profession":
         return _text_contours(values["profession"], values["profession_font"], default_center + values["profession_x"], values["height"] * 0.66 + values["profession_y"], min(5.7, shape["height"] * 0.16) * badge_scale * values["profession_size"] / 100, text_width)
+    if component == "extra_text":
+        return _text_contours(values.get("extra_text", ""), values["extra_font"], default_center + values["extra_x"], values["height"] * 0.75 + values["extra_y"], min(5.2, shape["height"] * 0.14) * badge_scale * values["extra_size"] / 100, text_width)
     return []
 
 
@@ -439,6 +454,11 @@ def _clean_text(value: str, fallback: str, limit: int) -> str:
     return cleaned[:limit] or fallback
 
 
+def _clean_optional_text(value: str, limit: int) -> str:
+    allowed = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789&-'./ "
+    return "".join(char for char in (value or "").upper() if char in allowed)[:limit]
+
+
 def _text_metrics(text: str, font_name: str) -> tuple[dict, list[str], list[float], float, float]:
     data = _font_data(font_name)
     chars = list(text)
@@ -478,34 +498,49 @@ def vector_text(text: str, font_name: str, center_x: float, center_y: float, tar
 
 def badge_values(
     name: str, profession: str, shape_name: str, name_font: str, symbol_name: str, auto_enlarge: bool,
+    profession_font: str = "Barlow Condensed SemiBold", name2: str = "", name2_font: str = "RUBY — custom SVG font",
+    extra_text: str = "", extra_font: str = "Barlow Condensed SemiBold", badge_size: int = 100,
+    border_size: int = 100, border_x: float = 0.0, border_y: float = 0.0,
     symbol_size: int = 100, symbol_x: float = 0.0, symbol_y: float = 0.0,
     name_size: int = 100, name_x: float = 0.0, name_y: float = 0.0,
+    name2_size: int = 100, name2_x: float = 0.0, name2_y: float = 0.0,
     profession_size: int = 100, profession_x: float = 0.0, profession_y: float = 0.0,
+    extra_size: int = 100, extra_x: float = 0.0, extra_y: float = 0.0,
 ) -> dict:
     shape = SHAPES[shape_name]
     clean_name = _clean_text(name, "NAME", 24)
+    clean_name2 = _clean_optional_text(name2, 24)
     clean_profession = _clean_text(profession, "PROFESSION", 32)
+    clean_extra = _clean_optional_text(extra_text, 32)
     base_width = shape["width"]
     body_width = shape.get("body_width", base_width)
     available_name_width = body_width * shape.get("text_width", 0.64 if symbol_name != "No symbol" else 0.78)
     name_height = min(12.0, shape["height"] * 0.30) * name_size / 100
     required_name_width = text_width_mm(clean_name, name_font, name_height)
-    badge_scale = 1.0
+    badge_scale = badge_size / 100
     if auto_enlarge and required_name_width > available_name_width:
-        badge_scale = min(required_name_width / available_name_width, max(1.0, 120.0 / base_width))
+        badge_scale = max(badge_scale, min(required_name_width / available_name_width, max(1.0, 120.0 / base_width)))
     return {
         "name": clean_name,
+        "name2": clean_name2,
         "profession": clean_profession,
+        "extra_text": clean_extra,
         "shape": shape_name,
         "name_font": name_font,
-        "profession_font": "Barlow Condensed SemiBold",
+        "name2_font": name2_font,
+        "profession_font": profession_font,
+        "extra_font": extra_font,
         "symbol": symbol_name,
         "scale": badge_scale,
         "width": base_width * badge_scale,
         "height": shape["height"] * badge_scale,
+        "badge_size": badge_size,
+        "border_size": border_size, "border_x": border_x, "border_y": border_y,
         "symbol_size": symbol_size, "symbol_x": symbol_x, "symbol_y": symbol_y,
         "name_size": name_size, "name_x": name_x, "name_y": name_y,
+        "name2_size": name2_size, "name2_x": name2_x, "name2_y": name2_y,
         "profession_size": profession_size, "profession_x": profession_x, "profession_y": profession_y,
+        "extra_size": extra_size, "extra_x": extra_x, "extra_y": extra_y,
     }
 
 
@@ -538,10 +573,16 @@ def layer_markup(layer: str, values: dict) -> str:
     profession_height = min(5.7, shape["height"] * 0.16) * scale * values["profession_size"] / 100
     name_center = default_text_center + values["name_x"]
     profession_center = default_text_center + values["profession_x"]
-    name_y = values["height"] * 0.40 + values["name_y"]
+    name_y = values["height"] * (0.33 if values.get("name2") else 0.40) + values["name_y"]
+    name2_height = min(10.5, shape["height"] * 0.25) * scale * values["name2_size"] / 100
+    name2_center = default_text_center + values["name2_x"]
+    name2_y = values["height"] * 0.50 + values["name2_y"]
     profession_y = values["height"] * 0.66 + values["profession_y"]
+    extra_height = min(5.2, shape["height"] * 0.14) * scale * values["extra_size"] / 100
+    extra_center = default_text_center + values["extra_x"]
+    extra_y = values["height"] * 0.75 + values["extra_y"]
 
-    if layer in ("base", "border", "name", "profession", "symbol"):
+    if layer in ("base", "border", "name", "name2", "profession", "extra_text", "symbol"):
         rounded_markup = _rounding_markup(layer, values)
         if rounded_markup is not None:
             return rounded_markup
@@ -549,11 +590,21 @@ def layer_markup(layer: str, values: dict) -> str:
     if layer == "base":
         return f'<path d="{base_path}" transform="{transform}" fill-rule="evenodd"/>'
     if layer == "border":
-        return "".join(f'<path d="{path}" transform="{transform}" fill-rule="evenodd"/>' for path in white_paths)
+        part_scale = values["border_size"] / 100
+        center_x, center_y = values["width"] / 2, values["height"] / 2
+        border_transform = (
+            f'translate({center_x + values["border_x"]:.6f} {center_y + values["border_y"]:.6f}) '
+            f'scale({part_scale:.7f}) translate({-center_x:.6f} {-center_y:.6f}) {transform}'
+        )
+        return "".join(f'<path d="{path}" transform="{border_transform}" fill-rule="evenodd"/>' for path in white_paths)
     if layer == "name":
         return vector_text(values["name"], values["name_font"], name_center, name_y, name_height, text_width)
+    if layer == "name2":
+        return vector_text(values["name2"], values["name2_font"], name2_center, name2_y, name2_height, text_width) if values.get("name2") else ""
     if layer == "profession":
         return vector_text(values["profession"], values["profession_font"], profession_center, profession_y, profession_height, text_width)
+    if layer == "extra_text":
+        return vector_text(values["extra_text"], values["extra_font"], extra_center, extra_y, extra_height, text_width) if values.get("extra_text") else ""
     if layer == "symbol":
         return symbol_markup(values)
     raise ValueError(f"Unknown layer: {layer}")
@@ -608,7 +659,7 @@ def corner_editor_svg(component: str, values: dict) -> str:
 def preview_svg(values: dict, base_colour: str, marker_component: str | None = None) -> str:
     white = "#fffaf7"
     layers = [f'<g fill="{base_colour}">{layer_markup("base", values)}</g>']
-    for layer in ("border", "name", "profession", "symbol"):
+    for layer in ("border", "name", "name2", "profession", "extra_text", "symbol"):
         markup = layer_markup(layer, values)
         if markup:
             layers.append(f'<g fill="{white}">{markup}</g>')
