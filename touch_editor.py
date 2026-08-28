@@ -15,16 +15,15 @@ svg{width:100%;height:100%;touch-action:none;user-select:none;-webkit-user-selec
 .obj{cursor:pointer}.selected-outline{fill:none;stroke:#242027;stroke-width:.5;stroke-dasharray:1.4 1;vector-effect:non-scaling-stroke;pointer-events:none}
 .handle{fill:#fff;stroke:#242027;stroke-width:.55;vector-effect:non-scaling-stroke;cursor:nwse-resize}
 #hint{height:30px;padding:6px 10px;text-align:center;font-size:12px;color:#746b74;background:#fffaf7}
-#deletebar{height:48px;padding:6px 10px;background:#fffaf7;border-top:1px solid #eaded8}#delete{width:100%;background:#f5e8ec;color:#9b3153;touch-action:manipulation}#delete.holding{background:#d62568;color:white}
 </style></head><body>
 <div id="toolbar"><select id="picker"><option value="">Tap or choose a part</option></select></div>
-<div id="stage"></div><div id="hint">Drag to move • drag the square handle to resize</div><div id="deletebar"><button id="delete" disabled>Press and hold to delete selected part</button></div>
+<div id="stage"></div><div id="hint">Tap to select • drag to move • drag the square handle to resize</div>
 <script>
 const send=(type,data={})=>window.parent.postMessage({isStreamlitMessage:true,type,...data},"*");
 const setValue=value=>send("streamlit:setComponentValue",{value});
 const setHeight=height=>send("streamlit:setFrameHeight",{height});
-let args={}, selected=null, gesture=null, deleteTimer=null;
-const stage=document.getElementById("stage"), picker=document.getElementById("picker"), deleteButton=document.getElementById("delete");
+let args={}, selected=null, gesture=null;
+const stage=document.getElementById("stage"), picker=document.getElementById("picker");
 
 function svgPoint(event){
   const svg=document.getElementById("canvas"), point=svg.createSVGPoint();
@@ -33,10 +32,9 @@ function svgPoint(event){
 }
 function activeLayer(){return (args.layers||[]).find(layer=>layer.id===selected)}
 function selectObject(id){
-  clearTimeout(deleteTimer);deleteButton.classList.remove("holding");deleteButton.textContent="Press and hold to delete selected part";
   selected=id; document.getElementById("selection")?.remove();
   const object=document.querySelector('.obj[data-id="'+id+'"]');
-  if(!object){selected=null; picker.value="";deleteButton.disabled=true;return}
+  if(!object){selected=null; picker.value="";return}
   const box=object.getBBox(), svg=document.getElementById("canvas"), overlay=document.createElementNS("http://www.w3.org/2000/svg","g");
   overlay.id="selection";
   const rect=document.createElementNS("http://www.w3.org/2000/svg","rect");
@@ -44,10 +42,10 @@ function selectObject(id){
   const handle=document.createElementNS("http://www.w3.org/2000/svg","rect"), hs=Math.max(1.8,Math.min(args.width,args.height)*.045);
   handle.setAttribute("x",box.x+box.width-hs/2);handle.setAttribute("y",box.y+box.height-hs/2);handle.setAttribute("width",hs);handle.setAttribute("height",hs);handle.setAttribute("rx",hs*.18);handle.setAttribute("class","handle");handle.id="resize-handle";
   overlay.append(rect,handle);svg.append(overlay);
-  picker.value=id;deleteButton.disabled=id==="base";
+  picker.value=id;
 }
 function render(next){
-  args=next||{}; selected=null; clearTimeout(deleteTimer);deleteButton.classList.remove("holding");deleteButton.textContent="Press and hold to delete selected part";deleteButton.disabled=true;
+  args=next||{}; selected=null;
   picker.innerHTML='<option value="">Tap or choose a part</option>'+(args.layers||[]).map(layer=>'<option value="'+layer.id+'">'+layer.label+'</option>').join("");
   const groups=(args.layers||[]).map(layer=>'<g class="obj" data-id="'+layer.id+'" fill="'+layer.fill+'" fill-rule="evenodd">'+layer.markup+'</g>').join("");
   stage.innerHTML='<svg id="canvas" viewBox="0 0 '+args.width+' '+args.height+'" preserveAspectRatio="xMidYMid meet"><rect width="'+args.width+'" height="'+args.height+'" rx="2" fill="'+args.background+'"/>'+groups+'</svg>';
@@ -67,6 +65,7 @@ function render(next){
     if(!gesture)return;event.preventDefault();const p=svgPoint(event), object=document.querySelector('.obj[data-id="'+gesture.id+'"]'), overlay=document.getElementById("selection");
     if(gesture.type==="move"){
       gesture.dx=p.x-gesture.start.x;gesture.dy=p.y-gesture.start.y;
+      if(Math.hypot(gesture.dx,gesture.dy)<1.0)return;
       const transform='translate('+gesture.dx+' '+gesture.dy+')';object.setAttribute("transform",transform);if(overlay)overlay.setAttribute("transform",transform);
     }else{
       const cx=gesture.box.x+gesture.box.width/2,cy=gesture.box.y+gesture.box.height/2;
@@ -79,26 +78,14 @@ function render(next){
     if(!gesture)return;const current=gesture;gesture=null;
     const layer=(args.layers||[]).find(item=>item.id===current.id)||{};
     if(current.type==="move"){
-      if(Math.hypot(current.dx,current.dy)>.08)setValue({nonce:Date.now(),action:"update",component:current.id,x:Math.max(-25,Math.min(25,current.initialX+current.dx)),y:Math.max(-20,Math.min(20,current.initialY+current.dy))});
+      if(Math.hypot(current.dx,current.dy)>=1.0)setValue({nonce:Date.now(),action:"update",component:current.id,x:Math.max(-25,Math.min(25,current.initialX+current.dx)),y:Math.max(-20,Math.min(20,current.initialY+current.dy))});
     }else setValue({nonce:Date.now(),action:"update",component:current.id,size:Math.max(layer.minSize||40,Math.min(layer.maxSize||180,current.initialSize*current.scale))});
   };
   svg.addEventListener("pointerup",finish);svg.addEventListener("pointercancel",finish);
 }
-deleteButton.addEventListener("pointerdown",event=>{
-  if(!selected||selected==="base")return;
-  event.preventDefault();deleteButton.classList.add("holding");deleteButton.textContent="Keep holding…";
-  deleteTimer=setTimeout(()=>{
-    deleteTimer=null;deleteButton.classList.remove("holding");deleteButton.textContent="Deleted";
-    setValue({nonce:Date.now(),action:"delete",component:selected});
-  },1200);
-});
-const cancelDelete=()=>{
-  if(deleteTimer){clearTimeout(deleteTimer);deleteTimer=null;deleteButton.classList.remove("holding");deleteButton.textContent="Press and hold to delete selected part";}
-};
-deleteButton.addEventListener("pointerup",cancelDelete);deleteButton.addEventListener("pointercancel",cancelDelete);deleteButton.addEventListener("pointerleave",cancelDelete);
 picker.addEventListener("change",()=>{if(picker.value)selectObject(picker.value);else selectObject("")});
 window.addEventListener("message",event=>{if(event.data?.type==="streamlit:render")render(event.data.args)});
-send("streamlit:componentReady",{apiVersion:1});setHeight(425);
+send("streamlit:componentReady",{apiVersion:1});setHeight(377);
 </script></body></html>"""
 
 

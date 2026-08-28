@@ -185,19 +185,28 @@ if st.session_state["touch_mode"]:
     if touch_result and touch_result.get("nonce") != st.session_state.get("last_touch_nonce"):
         st.session_state["last_touch_nonce"] = touch_result.get("nonce")
         changed_component = touch_result.get("component")
-        confirmed_delete = (
-            touch_result.get("action") == "delete"
-            and touch_result.get("confirmDelete") is True
-            and touch_result.get("deleteToken") == f"DELETE:{changed_component}"
-        )
-        if confirmed_delete and changed_component != "base":
-            hidden_components.add(changed_component)
-            st.session_state["hidden_components"] = sorted(hidden_components)
-        elif touch_result.get("action") == "update" and changed_component in COMPONENT_PREFIX:
+        if touch_result.get("action") == "update" and changed_component in COMPONENT_PREFIX:
             for field in ("size", "x", "y"):
                 if field in touch_result and field in DEFAULTS[changed_component]:
                     st.session_state[f"cfg_{changed_component}_{field}"] = touch_result[field]
                     st.session_state.pop(f"edit_{COMPONENT_PREFIX[changed_component]}_{field}", None)
+            st.rerun()
+
+    hide_options = {}
+    if SHAPES[shape_name].get("white"):
+        hide_options["White border"] = "border"
+    hide_options["Name line 1"] = "name"
+    if name2:
+        hide_options["Name line 2"] = "name2"
+    hide_options["Profession"] = "profession"
+    if extra_text:
+        hide_options["Additional text"] = "extra_text"
+    if symbol_name != "No symbol":
+        hide_options["Symbol"] = "symbol"
+    hide_label = st.selectbox("Part to hide", list(hide_options), key="touch_hide_choice")
+    if st.button("Hide this part", use_container_width=True):
+        hidden_components.add(hide_options[hide_label])
+        st.session_state["hidden_components"] = sorted(hidden_components)
         st.rerun()
 else:
     st.caption("Edit below—the preview stays visible while you make changes.")
