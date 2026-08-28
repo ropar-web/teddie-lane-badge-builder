@@ -153,13 +153,14 @@ for component, current_content in restore_when_changed.items():
     st.session_state[previous_key] = current_content
 st.session_state["hidden_components"] = sorted(hidden_components)
 values["hidden"] = hidden_components
+deferred_rerun = False
 
 
 st.markdown('<div class="badge-kicker">Teddie &amp; Lane</div><div class="badge-title">Badge Builder</div>', unsafe_allow_html=True)
 st.toggle("Touch edit directly on preview", key="touch_mode")
 
 if st.session_state["touch_mode"]:
-    st.caption("Touch editor V6 • tap or choose a part, drag it to move, or drag the square handle to resize.")
+    st.caption("Touch editor V7 • input-state fix • tap or choose a part, drag it to move, or drag the square handle to resize.")
     labels = {
         "base": "Badge overall", "border": "White border", "name": "Name line 1",
         "name2": "Name line 2", "profession": "Profession", "extra_text": "Additional text", "symbol": "Symbol",
@@ -190,7 +191,7 @@ if st.session_state["touch_mode"]:
                 if field in touch_result and field in DEFAULTS[changed_component]:
                     st.session_state[f"cfg_{changed_component}_{field}"] = touch_result[field]
                     st.session_state.pop(f"edit_{COMPONENT_PREFIX[changed_component]}_{field}", None)
-            st.rerun()
+            deferred_rerun = True
 
     hide_options = {}
     if SHAPES[shape_name].get("white"):
@@ -207,7 +208,7 @@ if st.session_state["touch_mode"]:
     if st.button("Hide this part", use_container_width=True):
         hidden_components.add(hide_options[hide_label])
         st.session_state["hidden_components"] = sorted(hidden_components)
-        st.rerun()
+        deferred_rerun = True
 else:
     st.caption("Edit below—the preview stays visible while you make changes.")
     svg = preview_svg(values, base_colour)
@@ -222,7 +223,7 @@ if hidden_components:
     st.warning("Hidden parts: " + ", ".join(layer.replace("_", " ").title() for layer in sorted(hidden_components)))
     if st.button("Restore all deleted parts", use_container_width=True):
         st.session_state["hidden_components"] = []
-        st.rerun()
+        deferred_rerun = True
 
 
 with st.expander("1. Text, shape and fonts", expanded=True):
@@ -347,3 +348,10 @@ with st.expander("Tinkercad setup"):
     )
 
 st.caption("Uploaded shapes retain their original artwork proportions.")
+
+# A touch update needs one fresh render because `values` was calculated before
+# the component returned its new position/size.  Restart only after every input
+# widget above has rendered; restarting earlier makes Streamlit discard optional
+# widget state such as name line 2 and the selected symbol.
+if deferred_rerun:
+    st.rerun()
