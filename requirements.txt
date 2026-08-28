@@ -1,0 +1,2 @@
+streamlit>=1.43,<2
+fonttools>=4.56,<5
