@@ -133,6 +133,25 @@ for component in COMPONENT_PREFIX:
     }
 values["rounding"] = rounding
 hidden_components = set(st.session_state.get("hidden_components", []))
+
+# Typing/replacing content restores that layer, but an intentionally deleted
+# unchanged layer stays hidden until the user presses Restore.
+restore_when_changed = {
+    "name": name,
+    "name2": name2,
+    "profession": profession,
+    "extra_text": extra_text,
+    "symbol": symbol_name,
+    "border": shape_name,
+}
+for component, current_content in restore_when_changed.items():
+    previous_key = f"previous_content_{component}"
+    previous_content = st.session_state.get(previous_key)
+    is_present = bool(current_content) and current_content != "No symbol"
+    if is_present and previous_content != current_content:
+        hidden_components.discard(component)
+    st.session_state[previous_key] = current_content
+st.session_state["hidden_components"] = sorted(hidden_components)
 values["hidden"] = hidden_components
 
 
