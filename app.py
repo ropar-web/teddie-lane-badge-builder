@@ -242,7 +242,7 @@ with st.expander("1. Text, shape and fonts", expanded=True):
         st.selectbox("Profession font", font_names, key="content_profession_font")
         st.text_input("Additional text (optional)", max_chars=32, key="content_extra")
         st.selectbox("Additional text font", font_names, key="content_extra_font", disabled=not extra_text)
-        st.caption("Ruby accepts uppercase, lowercase, numbers and the supplied punctuation. Letter case is kept exactly as typed.")
+        st.caption("RUBY and EMMA accept uppercase, lowercase, numbers and their supplied punctuation. Letter case is kept exactly as typed.")
         if "Consolas" not in FONT_FILES:
             st.caption("To enable exact Consolas, upload your licensed file as Consolas.ttf beside app.py.")
 
