@@ -88,4 +88,4 @@ step1.info(f"**1. Import and align**\n\nImport every SVG at 100% and align their
 step2.info("**2. Set the heights**\n\nBase: 2.0 mm. White parts: 0.8 mm tall, placed at Z = 2.0 mm.")
 step3.info("**3. Print the colour**\n\nWithout AMS, add one filament change at 2.0 mm for the raised white details.")
 
-st.caption("Uploaded Shape 1 keeps its original artwork proportions. Only the unused Silhouette canvas whitespace is removed.")
+st.caption("All uploaded shapes keep their original artwork proportions. Only unused Silhouette canvas whitespace is removed.")
