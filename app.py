@@ -159,7 +159,7 @@ st.markdown('<div class="badge-kicker">Teddie &amp; Lane</div><div class="badge-
 st.toggle("Touch edit directly on preview", key="touch_mode")
 
 if st.session_state["touch_mode"]:
-    st.caption("Tap or choose a part, drag it to move, or drag the square handle to resize.")
+    st.caption("Touch editor V6 • tap or choose a part, drag it to move, or drag the square handle to resize.")
     labels = {
         "base": "Badge overall", "border": "White border", "name": "Name line 1",
         "name2": "Name line 2", "profession": "Profession", "extra_text": "Additional text", "symbol": "Symbol",

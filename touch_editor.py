@@ -89,10 +89,10 @@ send("streamlit:componentReady",{apiVersion:1});setHeight(377);
 </script></body></html>"""
 
 
-component_directory = Path(gettempdir()) / "teddie_lane_touch_editor"
+component_directory = Path(gettempdir()) / "teddie_lane_touch_editor_v6"
 component_directory.mkdir(parents=True, exist_ok=True)
 index_file = component_directory / "index.html"
 if not index_file.exists() or index_file.read_text(encoding="utf-8") != HTML:
     index_file.write_text(HTML, encoding="utf-8")
 
-touch_badge_editor = components.declare_component("touch_badge_editor", path=str(component_directory))
+touch_badge_editor = components.declare_component("touch_badge_editor_v6", path=str(component_directory))
