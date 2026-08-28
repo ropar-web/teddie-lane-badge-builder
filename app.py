@@ -35,7 +35,24 @@ with st.sidebar:
     auto_enlarge = st.toggle("Enlarge proportionally for long names", value=True)
     base_colour = st.color_picker("Base colour", "#ed7594")
 
-values = badge_values(name, profession, shape_name, name_font, symbol_name, auto_enlarge)
+    with st.expander("Fine-tune size and position"):
+        st.caption("The preview and downloaded SVG files use these exact adjustments.")
+        symbol_size = st.slider("Symbol size (%)", 50, 160, 100, disabled=symbol_name == "No symbol")
+        symbol_x = st.slider("Symbol left / right (mm)", -20.0, 20.0, 0.0, 0.5, disabled=symbol_name == "No symbol")
+        symbol_y = st.slider("Symbol up / down (mm)", -15.0, 15.0, 0.0, 0.5, disabled=symbol_name == "No symbol")
+        name_size = st.slider("Name size (%)", 60, 140, 100)
+        name_x = st.slider("Name left / right (mm)", -15.0, 15.0, 0.0, 0.5)
+        name_y = st.slider("Name up / down (mm)", -10.0, 10.0, 0.0, 0.5)
+        profession_size = st.slider("Profession size (%)", 60, 140, 100)
+        profession_x = st.slider("Profession left / right (mm)", -15.0, 15.0, 0.0, 0.5)
+        profession_y = st.slider("Profession up / down (mm)", -10.0, 10.0, 0.0, 0.5)
+
+values = badge_values(
+    name, profession, shape_name, name_font, symbol_name, auto_enlarge,
+    symbol_size=symbol_size, symbol_x=symbol_x, symbol_y=symbol_y,
+    name_size=name_size, name_x=name_x, name_y=name_y,
+    profession_size=profession_size, profession_x=profession_x, profession_y=profession_y,
+)
 
 left, right = st.columns([1.5, 1], gap="large")
 with left:

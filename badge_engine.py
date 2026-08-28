@@ -6,7 +6,9 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 from zipfile import ZIP_DEFLATED, ZipFile
 
+from fontTools.pens.boundsPen import BoundsPen
 from fontTools.pens.svgPathPen import SVGPathPen
+from fontTools.svgLib.path.parser import parse_path
 from fontTools.ttLib import TTFont
 
 
@@ -95,7 +97,70 @@ SHAPES = {
     },
 }
 
-SYMBOLS = {"No symbol": ""}
+SYMBOL_SHEET = ROOT / "symbols.svg"
+SYMBOLS = {
+    "No symbol": [],
+    "Books": ["path_6ed86875b65ab5610aa6e15e5f10d18c"],
+    "Open Book": ["path_8626ed85d6e34ffdc46e1fe8786a0016"],
+    "Pencil": ["path_71482ec58792b49c301d53e9714aa9e9"],
+    "Pen": ["path_320a31ae9cb977148949750d5f69a094"],
+    "Art Palette": ["path_4d500725313570986e3f1df8ac1de721"],
+    "Smiley Face": ["path_2f41dd64ed083a60119a208bce4ad592"],
+    "Daisy Outline": ["path_3018c154bdee9937ffd73418d1d4572b"],
+    "Daisy": ["path_f7b740f484cc81e81c54d36004fde910"],
+    "Rose": ["path_4076f162b6113ae8a113e0789b6ef27c"],
+    "Rainbow": ["path_b7729085b6bbea5f333586384795636c"],
+    "Sun": ["path_84d4c4200310a76c52d1efa957882b81"],
+    "Moon and Stars": ["path_6e1e0ca792f0094d5ca5b67d3675b0c9"],
+    "Cloud": ["path_0c41b101ec6c14aa572dbdfb44fe72ca"],
+    "Lightning": ["path_b093ea3354cf65bce8c650d068cbaf44"],
+    "Hot Drink": ["path_943f9d6b9006b9b5ed352bb92f60a05d"],
+    "Coffee Cup": ["path_b92ec2f4ca41ed91a7d6a2f8f0032d4d"],
+    "Iced Drink": ["path_f4a313ed4f576108a18562ba7f43b1c4"],
+    "Cupcake": ["path_cd86124de43dcc80a189e694f7012515"],
+    "Donut": ["path_6c81ed59ebad99baa07bc557a88cee70"],
+    "Strawberry": ["path_7ef0506af3b9f06c3a2d3ce50c5b30bd"],
+    "Cherries": ["path_938bbc5c73d517edfd00cadc6ebd02a6"],
+    "Pizza": ["path_8a6041a1b5fdd3c7f7f076f655d50704"],
+    "Stethoscope": ["path_05d24fb968450b70621c3b013a04ce0a"],
+    "Mother and Baby": ["path_4645bd778019d042b32e2fcc8baa58ad"],
+    "Healthcare Worker": ["path_eaaacbfe359001db9db0eb71dec8e680"],
+    "Caring People": ["path_d33688da9b6afd0bcffe48bc25604fd3"],
+    "Medical Cross": ["path_0cf5909676b59757db4acd76c69fd53b"],
+    "Veterinary Paw Cross A": ["path_8ec7450153fb9d813378aebbf79567bd"],
+    "Animal Care Paw": ["path_596868d4415d6f53e1b6483383d93ce2"],
+    "Veterinary Paw Cross B": ["path_2bafb65d1d622868487b957e455d732b"],
+    "Veterinarian and Pet": ["path_a9b110428542adf3991b8ffa7ba4a1ac"],
+    "Medical Monitor": ["path_b0e9d3013d1888a2c33a97e0e2241dcb"],
+    "Star of Life": ["path_d67340b045f7889c6fc8c0f0aa1ea1c7"],
+    "Physiotherapy": ["path_8d4ecc2716bdeb4330fc6a0080b8135b"],
+    "Care and Support": ["path_97e7e70730316b25cc5cef7fb2207e24"],
+    "Chat": ["path_2b39ac324dc54f5cb4f9f0bb4e525a6d"],
+    "Hairdresser": ["path_37a1157e3cf7c3f02d516823e311e3a3"],
+    "Paw Print": ["path_38055091cba468ac89c97dc91cb376ef", "path_aa3d8e6144f10d497166cc5b22a9df43", "path_8f84131214201045a4dbac42b3bfb7d6", "path_7b0de287de1670f64cb1fbfcf4bfd20e", "path_77b45a992fc68b82712aaa6d1eb7d4cf"],
+    "Dog": ["path_33eae147307a8f624bbfcc071e6aa41e"],
+    "Dog Heart": ["path_4ef9c6a929a63d69c10ce0a3784524ba"],
+    "Tooth": ["path_ff5630e85547ed1ddd537e72194c3130"],
+    "Pharmacy": ["path_8e1d7a166321505bc4db5ba1347b7d04"],
+    "X-Ray": ["path_94bd1b9f3486ba6f0edd86ee57a0bc13"],
+    "Ultrasound": ["path_8ba8e3a5d423b75bf988911633f55b2d"],
+    "Test Tube": ["path_ce94ed77ffa455d2bbc86053e7997cc3"],
+    "Dog Sitting": ["path_ac49cf3aa7132a5526622ee99fbcb747", "path_954eeefd484dea3788e514c0c8f0c0d2"],
+    "Cat": ["path_ca90537c370cc2afe2b442f82f94a043"],
+    "Rabbit": ["path_8dfd773c3a50e2614b2021a083ae1c1f"],
+    "Horse": ["path_059a586ddb248acaa2bb459de0aa1b9a"],
+    "Cow": ["path_0d6e134b2863a592f93343d94b48f399"],
+    "First Aid Kit": ["path_803e49762b48a057b3cf4d48fa1d32e4"],
+    "Syringe": ["path_f87c971ea34f42461d01d951b78b8c57"],
+    "Scrubs": ["path_b54e6e7410a90fa71e893ad0bf11da90"],
+    "Bandage": ["path_c1b68365961fd8f95d4bb669ff6e6201"],
+    "Heartbeat": ["path_0e795be99c9e6fd1747a6761b5ba9b6f"],
+    "Sheep": ["path_27f3b7870af758afe7b1685cd18bf18a"],
+    "Pig": ["path_09d41c7794a195e02153e3e13c241e8b"],
+    "Bird": ["path_946d45b63ab9640c0e373a277947fe31"],
+    "Fish": ["path_4b7823c463d5c4408907b976ffe0a83b"],
+    "Turtle": ["path_4a5769889d0781235562ae1b129f2c38"],
+}
 LAYER_FILES = {
     "base": "01_BASE.svg",
     "border": "02_WHITE_BORDER.svg",
@@ -129,6 +194,32 @@ def _font_data(font_name: str):
         "ascender": font["hhea"].ascent,
         "descender": font["hhea"].descent,
     }
+
+
+@lru_cache(maxsize=1)
+def _symbol_sheet_paths() -> dict[str, str]:
+    root = ET.parse(SYMBOL_SHEET).getroot()
+    return {element.attrib.get("id"): element.attrib.get("d", "") for element in root.iter() if element.tag.endswith("path")}
+
+
+@lru_cache(maxsize=None)
+def _symbol_data(symbol_name: str) -> tuple[tuple[str, ...], tuple[float, float, float, float]]:
+    sheet_paths = _symbol_sheet_paths()
+    path_ids = SYMBOLS[symbol_name]
+    missing = [path_id for path_id in path_ids if path_id not in sheet_paths]
+    if missing:
+        raise ValueError(f"{SYMBOL_SHEET.name} is missing symbol paths: {', '.join(missing)}")
+    paths = tuple(sheet_paths[path_id] for path_id in path_ids)
+    bounds = []
+    for path in paths:
+        pen = BoundsPen(None)
+        parse_path(path, pen)
+        if pen.bounds:
+            bounds.append(pen.bounds)
+    return paths, (
+        min(item[0] for item in bounds), min(item[1] for item in bounds),
+        max(item[2] for item in bounds), max(item[3] for item in bounds),
+    )
 
 
 def _clean_text(value: str, fallback: str, limit: int) -> str:
@@ -174,14 +265,19 @@ def vector_text(text: str, font_name: str, center_x: float, center_y: float, tar
     return "".join(paths)
 
 
-def badge_values(name: str, profession: str, shape_name: str, name_font: str, symbol_name: str, auto_enlarge: bool) -> dict:
+def badge_values(
+    name: str, profession: str, shape_name: str, name_font: str, symbol_name: str, auto_enlarge: bool,
+    symbol_size: int = 100, symbol_x: float = 0.0, symbol_y: float = 0.0,
+    name_size: int = 100, name_x: float = 0.0, name_y: float = 0.0,
+    profession_size: int = 100, profession_x: float = 0.0, profession_y: float = 0.0,
+) -> dict:
     shape = SHAPES[shape_name]
     clean_name = _clean_text(name, "NAME", 24)
     clean_profession = _clean_text(profession, "PROFESSION", 32)
     base_width = shape["width"]
     body_width = shape.get("body_width", base_width)
     available_name_width = body_width * shape.get("text_width", 0.64 if symbol_name != "No symbol" else 0.78)
-    name_height = min(12.0, shape["height"] * 0.30)
+    name_height = min(12.0, shape["height"] * 0.30) * name_size / 100
     required_name_width = text_width_mm(clean_name, name_font, name_height)
     badge_scale = 1.0
     if auto_enlarge and required_name_width > available_name_width:
@@ -196,7 +292,26 @@ def badge_values(name: str, profession: str, shape_name: str, name_font: str, sy
         "scale": badge_scale,
         "width": base_width * badge_scale,
         "height": shape["height"] * badge_scale,
+        "symbol_size": symbol_size, "symbol_x": symbol_x, "symbol_y": symbol_y,
+        "name_size": name_size, "name_x": name_x, "name_y": name_y,
+        "profession_size": profession_size, "profession_x": profession_x, "profession_y": profession_y,
     }
+
+
+def symbol_markup(values: dict) -> str:
+    if values["symbol"] == "No symbol":
+        return ""
+    paths, (min_x, min_y, max_x, max_y) = _symbol_data(values["symbol"])
+    symbol_width = max_x - min_x
+    symbol_height = max_y - min_y
+    target_size = min(values["height"] * 0.45, values["width"] * 0.21) * values["symbol_size"] / 100
+    symbol_scale = target_size / max(symbol_width, symbol_height)
+    source_x = (min_x + max_x) / 2
+    source_y = (min_y + max_y) / 2
+    target_x = values["width"] * 0.79 + values["symbol_x"]
+    target_y = values["height"] * 0.51 + values["symbol_y"]
+    transform = f'translate({target_x:.5f} {target_y:.5f}) scale({symbol_scale:.7f}) translate({-source_x:.5f} {-source_y:.5f})'
+    return "".join(f'<path d="{path}" transform="{transform}" fill-rule="evenodd"/>' for path in paths)
 
 
 def layer_markup(layer: str, values: dict) -> str:
@@ -205,24 +320,26 @@ def layer_markup(layer: str, values: dict) -> str:
     scale = values["scale"]
     transform = f'translate({-shape["min_x"] * scale:.6f} {-shape["min_y"] * scale:.6f}) scale({scale:.7f})'
     has_symbol = values["symbol"] != "No symbol"
-    text_center = values["width"] * shape.get("text_x", 0.39375 if has_symbol else 0.5)
+    default_text_center = values["width"] * shape.get("text_x", 0.39375 if has_symbol else 0.5)
     body_width = shape.get("body_width", shape["width"]) * scale
     text_width = body_width * shape.get("text_width", 0.625 if has_symbol else 0.78)
-    name_height = min(12.0, shape["height"] * 0.30) * scale
-    profession_height = min(5.7, shape["height"] * 0.16) * scale
-    name_y = values["height"] * 0.40
-    profession_y = values["height"] * 0.66
+    name_height = min(12.0, shape["height"] * 0.30) * scale * values["name_size"] / 100
+    profession_height = min(5.7, shape["height"] * 0.16) * scale * values["profession_size"] / 100
+    name_center = default_text_center + values["name_x"]
+    profession_center = default_text_center + values["profession_x"]
+    name_y = values["height"] * 0.40 + values["name_y"]
+    profession_y = values["height"] * 0.66 + values["profession_y"]
 
     if layer == "base":
         return f'<path d="{base_path}" transform="{transform}" fill-rule="evenodd"/>'
     if layer == "border":
         return "".join(f'<path d="{path}" transform="{transform}" fill-rule="evenodd"/>' for path in white_paths)
     if layer == "name":
-        return vector_text(values["name"], values["name_font"], text_center, name_y, name_height, text_width)
+        return vector_text(values["name"], values["name_font"], name_center, name_y, name_height, text_width)
     if layer == "profession":
-        return vector_text(values["profession"], values["profession_font"], text_center, profession_y, profession_height, text_width)
+        return vector_text(values["profession"], values["profession_font"], profession_center, profession_y, profession_height, text_width)
     if layer == "symbol":
-        return SYMBOLS[values["symbol"]]
+        return symbol_markup(values)
     raise ValueError(f"Unknown layer: {layer}")
 
 
