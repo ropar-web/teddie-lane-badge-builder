@@ -12,6 +12,7 @@ from fontTools.ttLib import TTFont
 
 ROOT = Path(__file__).resolve().parent
 FONT_FILES = {
+    "RUBY — custom SVG font": ROOT / "RUBY-Regular.ttf",
     "Jua — closest match": ROOT / "Jua-Regular.ttf",
     "Concert One": ROOT / "ConcertOne-Regular.ttf",
     "Barlow Condensed SemiBold": ROOT / "BarlowCondensed-SemiBold.ttf",
