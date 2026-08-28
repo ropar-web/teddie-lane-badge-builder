@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from functools import lru_cache
 from io import BytesIO
+from math import acos, ceil, degrees, hypot
 from pathlib import Path
 from xml.etree import ElementTree as ET
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from fontTools.pens.boundsPen import BoundsPen
+from fontTools.pens.basePen import BasePen
 from fontTools.pens.svgPathPen import SVGPathPen
+from fontTools.pens.transformPen import TransformPen
 from fontTools.svgLib.path.parser import parse_path
 from fontTools.ttLib import TTFont
 
@@ -222,6 +225,214 @@ def _symbol_data(symbol_name: str) -> tuple[tuple[str, ...], tuple[float, float,
     )
 
 
+class _FlattenPen(BasePen):
+    """Convert SVG curves to fine final-size polylines for true path rounding."""
+
+    def __init__(self, max_step: float = 0.18):
+        super().__init__(None)
+        self.max_step = max_step
+        self.contours: list[list[tuple[float, float]]] = []
+        self.current: list[tuple[float, float]] = []
+
+    def _moveTo(self, point):
+        if self.current:
+            self.contours.append(self.current)
+        self.current = [tuple(point)]
+
+    def _lineTo(self, point):
+        self.current.append(tuple(point))
+
+    def _curveToOne(self, p1, p2, p3):
+        p0 = self._getCurrentPoint()
+        length = hypot(p1[0] - p0[0], p1[1] - p0[1]) + hypot(p2[0] - p1[0], p2[1] - p1[1]) + hypot(p3[0] - p2[0], p3[1] - p2[1])
+        steps = max(2, min(128, ceil(length / self.max_step)))
+        for index in range(1, steps + 1):
+            t = index / steps
+            u = 1 - t
+            self.current.append((
+                u ** 3 * p0[0] + 3 * u * u * t * p1[0] + 3 * u * t * t * p2[0] + t ** 3 * p3[0],
+                u ** 3 * p0[1] + 3 * u * u * t * p1[1] + 3 * u * t * t * p2[1] + t ** 3 * p3[1],
+            ))
+
+    def _qCurveToOne(self, p1, p2):
+        p0 = self._getCurrentPoint()
+        length = hypot(p1[0] - p0[0], p1[1] - p0[1]) + hypot(p2[0] - p1[0], p2[1] - p1[1])
+        steps = max(2, min(128, ceil(length / self.max_step)))
+        for index in range(1, steps + 1):
+            t = index / steps
+            u = 1 - t
+            self.current.append((u * u * p0[0] + 2 * u * t * p1[0] + t * t * p2[0], u * u * p0[1] + 2 * u * t * p1[1] + t * t * p2[1]))
+
+    def _closePath(self):
+        if self.current:
+            if len(self.current) > 1 and hypot(self.current[-1][0] - self.current[0][0], self.current[-1][1] - self.current[0][1]) < 1e-6:
+                self.current.pop()
+            self.contours.append(self.current)
+            self.current = []
+
+    def _endPath(self):
+        if self.current:
+            self.contours.append(self.current)
+            self.current = []
+
+
+def _flatten_path(path: str, transform: tuple[float, float, float, float, float, float]) -> list[list[tuple[float, float]]]:
+    pen = _FlattenPen()
+    parse_path(path, TransformPen(pen, transform))
+    pen.endPath()
+    return [contour for contour in pen.contours if len(contour) >= 3]
+
+
+def _point_line_distance(point, start, end) -> float:
+    dx, dy = end[0] - start[0], end[1] - start[1]
+    if dx == 0 and dy == 0:
+        return hypot(point[0] - start[0], point[1] - start[1])
+    t = max(0.0, min(1.0, ((point[0] - start[0]) * dx + (point[1] - start[1]) * dy) / (dx * dx + dy * dy)))
+    projection = (start[0] + t * dx, start[1] + t * dy)
+    return hypot(point[0] - projection[0], point[1] - projection[1])
+
+
+def _rdp(points: list[tuple[float, float]], tolerance: float) -> list[tuple[float, float]]:
+    if len(points) <= 2:
+        return points
+    distance, position = max((_point_line_distance(point, points[0], points[-1]), index) for index, point in enumerate(points[1:-1], 1))
+    if distance <= tolerance:
+        return [points[0], points[-1]]
+    left = _rdp(points[: position + 1], tolerance)
+    right = _rdp(points[position:], tolerance)
+    return left[:-1] + right
+
+
+def _simplify_closed(points: list[tuple[float, float]], tolerance: float = 0.055) -> list[tuple[float, float]]:
+    if len(points) < 5:
+        return points
+    anchor = points[0]
+    opposite = max(range(1, len(points)), key=lambda index: hypot(points[index][0] - anchor[0], points[index][1] - anchor[1]))
+    first = _rdp(points[: opposite + 1], tolerance)
+    second = _rdp(points[opposite:] + [points[0]], tolerance)
+    result = first[:-1] + second[:-1]
+    return result if len(result) >= 3 else points
+
+
+def _corner_angle(previous, point, following) -> float:
+    ax, ay = previous[0] - point[0], previous[1] - point[1]
+    bx, by = following[0] - point[0], following[1] - point[1]
+    al, bl = hypot(ax, ay), hypot(bx, by)
+    if al < 1e-6 or bl < 1e-6:
+        return 180.0
+    cosine = max(-1.0, min(1.0, (ax * bx + ay * by) / (al * bl)))
+    return degrees(acos(cosine))
+
+
+def _corner_records(contours: list[list[tuple[float, float]]], simplify: bool = True):
+    records = []
+    for contour_index, original in enumerate(contours):
+        points = _simplify_closed(original) if simplify else original
+        for vertex_index, point in enumerate(points):
+            previous = points[vertex_index - 1]
+            following = points[(vertex_index + 1) % len(points)]
+            if _corner_angle(previous, point, following) <= 152 and min(hypot(point[0] - previous[0], point[1] - previous[1]), hypot(point[0] - following[0], point[1] - following[1])) >= 0.22:
+                records.append((contour_index, vertex_index, point, points))
+    return sorted(records, key=lambda item: (round(item[2][1], 2), round(item[2][0], 2)))
+
+
+def _text_contours(text: str, font_name: str, center_x: float, center_y: float, target_height: float, max_width: float):
+    data, chars, advances, spacing, width = _text_metrics(text, font_name)
+    text_scale = min(target_height / (data["ascender"] - data["descender"]), max_width / width)
+    cursor = center_x - width * text_scale / 2
+    baseline = center_y + (data["ascender"] + data["descender"]) * text_scale / 2
+    contours = []
+    for char, advance in zip(chars, advances):
+        glyph_name = data["cmap"].get(ord(char), ".notdef")
+        pen = SVGPathPen(data["glyph_set"])
+        data["glyph_set"][glyph_name].draw(pen)
+        commands = pen.getCommands()
+        if commands:
+            contours.extend(_flatten_path(commands, (text_scale, 0, 0, -text_scale, cursor, baseline)))
+        cursor += (advance + spacing) * text_scale
+    return contours
+
+
+def _component_contours(component: str, values: dict):
+    shape = SHAPES[values["shape"]]
+    badge_scale = values["scale"]
+    if component in ("base", "border"):
+        base_path, white_paths = _shape_paths(values["shape"])
+        paths = (base_path,) if component == "base" else white_paths
+        transform = (badge_scale, 0, 0, badge_scale, -shape["min_x"] * badge_scale, -shape["min_y"] * badge_scale)
+        return [contour for path in paths for contour in _flatten_path(path, transform)]
+    if component == "symbol":
+        if values["symbol"] == "No symbol":
+            return []
+        paths, (min_x, min_y, max_x, max_y) = _symbol_data(values["symbol"])
+        target_size = min(values["height"] * 0.45, values["width"] * 0.21) * values["symbol_size"] / 100
+        symbol_scale = target_size / max(max_x - min_x, max_y - min_y)
+        target_x = values["width"] * 0.79 + values["symbol_x"]
+        target_y = values["height"] * 0.51 + values["symbol_y"]
+        transform = (symbol_scale, 0, 0, symbol_scale, target_x - (min_x + max_x) * symbol_scale / 2, target_y - (min_y + max_y) * symbol_scale / 2)
+        return [contour for path in paths for contour in _flatten_path(path, transform)]
+
+    has_symbol = values["symbol"] != "No symbol"
+    default_center = values["width"] * shape.get("text_x", 0.39375 if has_symbol else 0.5)
+    body_width = shape.get("body_width", shape["width"]) * badge_scale
+    text_width = body_width * shape.get("text_width", 0.625 if has_symbol else 0.78)
+    if component == "name":
+        return _text_contours(values["name"], values["name_font"], default_center + values["name_x"], values["height"] * 0.40 + values["name_y"], min(12.0, shape["height"] * 0.30) * badge_scale * values["name_size"] / 100, text_width)
+    if component == "profession":
+        return _text_contours(values["profession"], values["profession_font"], default_center + values["profession_x"], values["height"] * 0.66 + values["profession_y"], min(5.7, shape["height"] * 0.16) * badge_scale * values["profession_size"] / 100, text_width)
+    return []
+
+
+def component_corner_points(component: str, values: dict) -> list[tuple[float, float]]:
+    return [record[2] for record in _corner_records(_component_contours(component, values))]
+
+
+def _rounded_component_path(component: str, values: dict, setting: dict) -> str:
+    contours = [_simplify_closed(contour) for contour in _component_contours(component, values)]
+    records = _corner_records(contours, simplify=False)
+    if setting.get("mode") == "Selected corners":
+        selected_numbers = set(setting.get("corners", []))
+        rounded_vertices = {(record[0], record[1]) for number, record in enumerate(records) if number in selected_numbers}
+    else:
+        rounded_vertices = {(record[0], record[1]) for record in records}
+    radius = max(0.0, float(setting.get("radius", 0.0)))
+    commands = []
+    for contour_index, points in enumerate(contours):
+        if len(points) < 3:
+            continue
+        entries, exits, rounded = [], [], []
+        for vertex_index, point in enumerate(points):
+            previous, following = points[vertex_index - 1], points[(vertex_index + 1) % len(points)]
+            use_rounding = (contour_index, vertex_index) in rounded_vertices and radius > 0
+            if use_rounding:
+                previous_length = hypot(previous[0] - point[0], previous[1] - point[1])
+                following_length = hypot(following[0] - point[0], following[1] - point[1])
+                offset = min(radius, previous_length * 0.42, following_length * 0.42)
+                entry = (point[0] + (previous[0] - point[0]) * offset / previous_length, point[1] + (previous[1] - point[1]) * offset / previous_length)
+                exit_point = (point[0] + (following[0] - point[0]) * offset / following_length, point[1] + (following[1] - point[1]) * offset / following_length)
+            else:
+                entry = exit_point = point
+            entries.append(entry); exits.append(exit_point); rounded.append(use_rounding)
+        commands.append(f"M {exits[0][0]:.4f} {exits[0][1]:.4f}")
+        for vertex_index in range(1, len(points)):
+            commands.append(f"L {entries[vertex_index][0]:.4f} {entries[vertex_index][1]:.4f}")
+            if rounded[vertex_index]:
+                commands.append(f"Q {points[vertex_index][0]:.4f} {points[vertex_index][1]:.4f} {exits[vertex_index][0]:.4f} {exits[vertex_index][1]:.4f}")
+        commands.append(f"L {entries[0][0]:.4f} {entries[0][1]:.4f}")
+        if rounded[0]:
+            commands.append(f"Q {points[0][0]:.4f} {points[0][1]:.4f} {exits[0][0]:.4f} {exits[0][1]:.4f}")
+        commands.append("Z")
+    return " ".join(commands)
+
+
+def _rounding_markup(component: str, values: dict) -> str | None:
+    setting = values.get("rounding", {}).get(component, {})
+    if float(setting.get("radius", 0.0)) <= 0:
+        return None
+    path = _rounded_component_path(component, values, setting)
+    return f'<path d="{path}" fill-rule="evenodd"/>' if path else ""
+
+
 def _clean_text(value: str, fallback: str, limit: int) -> str:
     allowed = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789&-'./ "
     cleaned = "".join(char for char in (value or fallback).upper() if char in allowed)
@@ -330,6 +541,11 @@ def layer_markup(layer: str, values: dict) -> str:
     name_y = values["height"] * 0.40 + values["name_y"]
     profession_y = values["height"] * 0.66 + values["profession_y"]
 
+    if layer in ("base", "border", "name", "profession", "symbol"):
+        rounded_markup = _rounding_markup(layer, values)
+        if rounded_markup is not None:
+            return rounded_markup
+
     if layer == "base":
         return f'<path d="{base_path}" transform="{transform}" fill-rule="evenodd"/>'
     if layer == "border":
@@ -353,13 +569,51 @@ def make_svg(layer: str, values: dict, colour: str = "#000000") -> str:
     )
 
 
-def preview_svg(values: dict, base_colour: str) -> str:
+def _corner_marker_markup(component: str, values: dict) -> str:
+    points = component_corner_points(component, values)
+    marker_radius = max(0.75, min(values["width"], values["height"]) * 0.026)
+    font_size = marker_radius * 1.25
+    markers = []
+    for number, (x, y) in enumerate(points, start=1):
+        markers.append(
+            f'<circle cx="{x:.4f}" cy="{y:.4f}" r="{marker_radius:.4f}" fill="#d62568" '
+            'stroke="#fffaf7" stroke-width="0.35"/>'
+            f'<text x="{x:.4f}" y="{y + font_size * 0.34:.4f}" text-anchor="middle" '
+            f'font-family="Arial,sans-serif" font-size="{font_size:.4f}" font-weight="700" fill="white">{number}</text>'
+        )
+    return "".join(markers)
+
+
+def corner_editor_svg(component: str, values: dict) -> str:
+    contours = _component_contours(component, values)
+    points = [point for contour in contours for point in contour]
+    if not points:
+        return ""
+    min_x = min(point[0] for point in points)
+    min_y = min(point[1] for point in points)
+    max_x = max(point[0] for point in points)
+    max_y = max(point[1] for point in points)
+    padding = max(1.8, (max_y - min_y) * 0.22)
+    width = max_x - min_x + padding * 2
+    height = max_y - min_y + padding * 2
+    content = layer_markup(component, values)
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{min_x - padding:.4f} {min_y - padding:.4f} {width:.4f} {height:.4f}" '
+        'style="display:block;width:100%;height:100%;max-height:245px">'
+        f'<rect x="{min_x - padding:.4f}" y="{min_y - padding:.4f}" width="{width:.4f}" height="{height:.4f}" rx="1" fill="#fffaf7"/>'
+        f'<g fill="#39343b">{content}</g><g pointer-events="none">{_corner_marker_markup(component, values)}</g></svg>'
+    )
+
+
+def preview_svg(values: dict, base_colour: str, marker_component: str | None = None) -> str:
     white = "#fffaf7"
     layers = [f'<g fill="{base_colour}">{layer_markup("base", values)}</g>']
     for layer in ("border", "name", "profession", "symbol"):
         markup = layer_markup(layer, values)
         if markup:
             layers.append(f'<g fill="{white}">{markup}</g>')
+    if marker_component:
+        layers.append(f'<g pointer-events="none">{_corner_marker_markup(marker_component, values)}</g>')
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {values["width"]:.5f} {values["height"]:.5f}" '
         'style="display:block;width:100%;height:100%;max-width:720px;max-height:350px;filter:drop-shadow(0 10px 8px rgba(80,32,50,.26))">'

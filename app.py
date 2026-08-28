@@ -1,7 +1,7 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-from badge_engine import FONT_FILES, LAYER_FILES, SHAPES, SYMBOLS, badge_values, clean_file_name, layer_markup, make_svg, make_zip_pack, preview_svg
+from badge_engine import FONT_FILES, LAYER_FILES, SHAPES, SYMBOLS, badge_values, clean_file_name, component_corner_points, corner_editor_svg, layer_markup, make_svg, make_zip_pack, preview_svg
 
 
 st.set_page_config(page_title="Teddie & Lane Badge Builder", page_icon="🏷️", layout="wide")
@@ -54,6 +54,59 @@ values = badge_values(
     profession_size=profession_size, profession_x=profession_x, profession_y=profession_y,
 )
 
+with st.sidebar:
+    with st.expander("Corner & edge editor", expanded=False):
+        st.caption("Edit one component at a time. Every component remembers its own settings.")
+        component_options = {"Badge shape": "base"}
+        if SHAPES[shape_name].get("white"):
+            component_options["White border"] = "border"
+        component_options["Name text"] = "name"
+        component_options["Profession text"] = "profession"
+        if symbol_name != "No symbol":
+            component_options["Symbol"] = "symbol"
+
+        component_label = st.selectbox("Selected component", list(component_options))
+        selected_component = component_options[component_label]
+        mode = st.radio(
+            "Apply rounding to",
+            ["Whole component", "Selected corners"],
+            horizontal=True,
+            key=f"round_mode_{selected_component}",
+        )
+        radius = st.slider(
+            "Round / smooth amount (mm)",
+            0.0,
+            3.0,
+            0.0,
+            0.1,
+            key=f"round_radius_{selected_component}",
+            help="0 keeps the original SVG exactly. Increase gradually for softer corners and edges.",
+        )
+        corner_count = len(component_corner_points(selected_component, values))
+        if mode == "Selected corners":
+            corner_choices = [str(number) for number in range(1, corner_count + 1)]
+            st.multiselect(
+                "Corners to round",
+                corner_choices,
+                key=f"round_corners_{selected_component}",
+                help="The matching numbers appear on the live preview.",
+            )
+            st.caption(f"{corner_count} selectable corners found. Choose their numbers in the preview.")
+        else:
+            st.caption("All detected corners and sharp edge changes on this component will be softened.")
+
+rounding = {}
+for component in ("base", "border", "name", "profession", "symbol"):
+    saved_mode = st.session_state.get(f"round_mode_{component}", "Whole component")
+    saved_corners = st.session_state.get(f"round_corners_{component}", [])
+    rounding[component] = {
+        "mode": saved_mode,
+        "radius": st.session_state.get(f"round_radius_{component}", 0.0),
+        "corners": [int(number) - 1 for number in saved_corners],
+    }
+values["rounding"] = rounding
+marker_component = selected_component if mode == "Selected corners" else None
+
 left, right = st.columns([1.5, 1], gap="large")
 with left:
     st.markdown(
@@ -69,6 +122,15 @@ with left:
         height=460,
         scrolling=False,
     )
+    if marker_component:
+        st.caption(f"Numbered corner map — {component_label}")
+        components.html(
+            '<div style="background:#fffaf7;border:1px solid #eaded8;border-radius:18px;padding:14px;display:grid;place-items:center;">'
+            + corner_editor_svg(marker_component, values)
+            + "</div>",
+            height=290,
+            scrolling=False,
+        )
 
 with right:
     st.subheader("Download all parts")
