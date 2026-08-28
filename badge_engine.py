@@ -326,14 +326,14 @@ def _corner_angle(previous, point, following) -> float:
     return degrees(acos(cosine))
 
 
-def _corner_records(contours: list[list[tuple[float, float]]], simplify: bool = True):
+def _corner_records(contours: list[list[tuple[float, float]]], simplify: bool = True, angle_limit: float = 152.0):
     records = []
     for contour_index, original in enumerate(contours):
         points = _simplify_closed(original) if simplify else original
         for vertex_index, point in enumerate(points):
             previous = points[vertex_index - 1]
             following = points[(vertex_index + 1) % len(points)]
-            if _corner_angle(previous, point, following) <= 152 and min(hypot(point[0] - previous[0], point[1] - previous[1]), hypot(point[0] - following[0], point[1] - following[1])) >= 0.22:
+            if _corner_angle(previous, point, following) <= angle_limit and min(hypot(point[0] - previous[0], point[1] - previous[1]), hypot(point[0] - following[0], point[1] - following[1])) >= 0.22:
                 records.append((contour_index, vertex_index, point, points))
     return sorted(records, key=lambda item: (round(item[2][1], 2), round(item[2][0], 2)))
 
@@ -387,30 +387,39 @@ def _component_contours(component: str, values: dict):
     body_width = shape.get("body_width", shape["width"]) * badge_scale
     text_width = body_width * shape.get("text_width", 0.625 if has_symbol else 0.78)
     if component == "name":
-        default_y = 0.33 if values.get("name2") else 0.40
-        return _text_contours(values["name"], values["name_font"], default_center + values["name_x"], values["height"] * default_y + values["name_y"], min(12.0, shape["height"] * 0.30) * badge_scale * values["name_size"] / 100, text_width)
+        has_second_name = bool(values.get("name2"))
+        default_y = 0.27 if has_second_name else 0.40
+        target_height = min(10.0, shape["height"] * 0.23) if has_second_name else min(12.0, shape["height"] * 0.30)
+        return _text_contours(values["name"], values["name_font"], default_center + values["name_x"], values["height"] * default_y + values["name_y"], target_height * badge_scale * values["name_size"] / 100, text_width)
     if component == "name2":
-        return _text_contours(values.get("name2", ""), values["name2_font"], default_center + values["name2_x"], values["height"] * 0.50 + values["name2_y"], min(10.5, shape["height"] * 0.25) * badge_scale * values["name2_size"] / 100, text_width)
+        return _text_contours(values.get("name2", ""), values["name2_font"], default_center + values["name2_x"], values["height"] * 0.48 + values["name2_y"], min(9.0, shape["height"] * 0.21) * badge_scale * values["name2_size"] / 100, text_width)
     if component == "profession":
-        return _text_contours(values["profession"], values["profession_font"], default_center + values["profession_x"], values["height"] * 0.66 + values["profession_y"], min(5.7, shape["height"] * 0.16) * badge_scale * values["profession_size"] / 100, text_width)
+        default_y = 0.69 if values.get("name2") else 0.66
+        return _text_contours(values["profession"], values["profession_font"], default_center + values["profession_x"], values["height"] * default_y + values["profession_y"], min(5.7, shape["height"] * 0.16) * badge_scale * values["profession_size"] / 100, text_width)
     if component == "extra_text":
-        return _text_contours(values.get("extra_text", ""), values["extra_font"], default_center + values["extra_x"], values["height"] * 0.75 + values["extra_y"], min(5.2, shape["height"] * 0.14) * badge_scale * values["extra_size"] / 100, text_width)
+        default_y = 0.84 if values.get("name2") else 0.80
+        return _text_contours(values.get("extra_text", ""), values["extra_font"], default_center + values["extra_x"], values["height"] * default_y + values["extra_y"], min(4.8, shape["height"] * 0.12) * badge_scale * values["extra_size"] / 100, text_width)
     return []
 
 
 def component_corner_points(component: str, values: dict) -> list[tuple[float, float]]:
-    return [record[2] for record in _corner_records(_component_contours(component, values))]
+    angle_limit = 165.0 if component in ("base", "border", "symbol") else 152.0
+    return [record[2] for record in _corner_records(_component_contours(component, values), angle_limit=angle_limit)]
 
 
 def _rounded_component_path(component: str, values: dict, setting: dict) -> str:
-    contours = [_simplify_closed(contour) for contour in _component_contours(component, values)]
-    records = _corner_records(contours, simplify=False)
-    if setting.get("mode") == "Selected corners":
+    radius = max(0.0, float(setting.get("radius", 0.0)))
+    selected_mode = setting.get("mode") == "Selected corners"
+    is_graphic = component in ("base", "border", "symbol")
+    tolerance = 0.055 if selected_mode or not is_graphic else min(1.2, max(0.055, radius * 0.20))
+    angle_limit = 165.0 if is_graphic else 152.0
+    contours = [_simplify_closed(contour, tolerance) for contour in _component_contours(component, values)]
+    records = _corner_records(contours, simplify=False, angle_limit=angle_limit)
+    if selected_mode:
         selected_numbers = set(setting.get("corners", []))
         rounded_vertices = {(record[0], record[1]) for number, record in enumerate(records) if number in selected_numbers}
     else:
         rounded_vertices = {(record[0], record[1]) for record in records}
-    radius = max(0.0, float(setting.get("radius", 0.0)))
     commands = []
     for contour_index, points in enumerate(contours):
         if len(points) < 3:
@@ -569,18 +578,20 @@ def layer_markup(layer: str, values: dict) -> str:
     default_text_center = values["width"] * shape.get("text_x", 0.39375 if has_symbol else 0.5)
     body_width = shape.get("body_width", shape["width"]) * scale
     text_width = body_width * shape.get("text_width", 0.625 if has_symbol else 0.78)
-    name_height = min(12.0, shape["height"] * 0.30) * scale * values["name_size"] / 100
+    has_second_name = bool(values.get("name2"))
+    name_base_height = min(10.0, shape["height"] * 0.23) if has_second_name else min(12.0, shape["height"] * 0.30)
+    name_height = name_base_height * scale * values["name_size"] / 100
     profession_height = min(5.7, shape["height"] * 0.16) * scale * values["profession_size"] / 100
     name_center = default_text_center + values["name_x"]
     profession_center = default_text_center + values["profession_x"]
-    name_y = values["height"] * (0.33 if values.get("name2") else 0.40) + values["name_y"]
-    name2_height = min(10.5, shape["height"] * 0.25) * scale * values["name2_size"] / 100
+    name_y = values["height"] * (0.27 if has_second_name else 0.40) + values["name_y"]
+    name2_height = min(9.0, shape["height"] * 0.21) * scale * values["name2_size"] / 100
     name2_center = default_text_center + values["name2_x"]
-    name2_y = values["height"] * 0.50 + values["name2_y"]
-    profession_y = values["height"] * 0.66 + values["profession_y"]
-    extra_height = min(5.2, shape["height"] * 0.14) * scale * values["extra_size"] / 100
+    name2_y = values["height"] * 0.48 + values["name2_y"]
+    profession_y = values["height"] * (0.69 if has_second_name else 0.66) + values["profession_y"]
+    extra_height = min(4.8, shape["height"] * 0.12) * scale * values["extra_size"] / 100
     extra_center = default_text_center + values["extra_x"]
-    extra_y = values["height"] * 0.75 + values["extra_y"]
+    extra_y = values["height"] * (0.84 if has_second_name else 0.80) + values["extra_y"]
 
     if layer in ("base", "border", "name", "name2", "profession", "extra_text", "symbol"):
         rounded_markup = _rounding_markup(layer, values)
