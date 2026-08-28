@@ -22,6 +22,10 @@ FONT_FILES = {
     "Concert One": ROOT / "ConcertOne-Regular.ttf",
     "Barlow Condensed SemiBold": ROOT / "BarlowCondensed-SemiBold.ttf",
 }
+for consolas_name in ("Consolas.ttf", "consola.ttf"):
+    if (ROOT / consolas_name).exists():
+        FONT_FILES["Consolas"] = ROOT / consolas_name
+        break
 
 # Every entry points to paths in the user's combined Silhouette SVG.  Bounds are
 # the original saved artwork bounds in millimetres, so the enormous empty page
@@ -570,6 +574,8 @@ def symbol_markup(values: dict) -> str:
 
 
 def layer_markup(layer: str, values: dict) -> str:
+    if layer in values.get("hidden", set()):
+        return ""
     shape = SHAPES[values["shape"]]
     base_path, white_paths = _shape_paths(values["shape"])
     scale = values["scale"]

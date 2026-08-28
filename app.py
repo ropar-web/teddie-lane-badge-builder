@@ -1,5 +1,6 @@
 import streamlit as st
 import streamlit.components.v1 as components
+from touch_editor import touch_badge_editor
 
 from badge_engine import (
     FONT_FILES, LAYER_FILES, SHAPES, SYMBOLS, badge_values, clean_file_name,
@@ -92,6 +93,7 @@ CONTENT_DEFAULTS = {
     "content_colour": "#ed7594", "content_auto": True, "content_name_font": font_names[0],
     "content_name2_font": font_names[0], "content_profession_font": default_small_font,
     "content_extra_font": default_small_font,
+    "touch_mode": False,
 }
 for key, value in CONTENT_DEFAULTS.items():
     if key not in st.session_state:
@@ -130,18 +132,64 @@ for component in COMPONENT_PREFIX:
         "corners": [int(number) - 1 for number in st.session_state.get(f"cfg_round_corners_{component}", [])],
     }
 values["rounding"] = rounding
+hidden_components = set(st.session_state.get("hidden_components", []))
+values["hidden"] = hidden_components
 
 
 st.markdown('<div class="badge-kicker">Teddie &amp; Lane</div><div class="badge-title">Badge Builder</div>', unsafe_allow_html=True)
-st.caption("Edit below—the preview stays visible while you make changes.")
+st.toggle("Touch edit directly on preview", key="touch_mode")
 
-svg = preview_svg(values, base_colour)
-st.markdown(
-    f'<div class="sticky-preview"><div class="preview-shell">'
-    f'<div class="preview-head"><strong>LIVE PREVIEW</strong><span>{values["width"]:.1f} × {values["height"]:.1f} mm</span></div>'
-    f'<div class="preview-art">{svg}</div></div></div>',
-    unsafe_allow_html=True,
-)
+if st.session_state["touch_mode"]:
+    st.caption("Tap or choose a part, drag it to move, or drag the square handle to resize.")
+    labels = {
+        "base": "Badge overall", "border": "White border", "name": "Name line 1",
+        "name2": "Name line 2", "profession": "Profession", "extra_text": "Additional text", "symbol": "Symbol",
+    }
+    touch_layers = []
+    for layer in LAYER_FILES:
+        markup = layer_markup(layer, values)
+        if not markup:
+            continue
+        touch_layers.append({
+            "id": layer, "label": labels[layer], "markup": markup,
+            "fill": base_colour if layer == "base" else "#fffaf7",
+            "size": float(cfg(layer, "size")),
+            "minSize": 70 if layer == "base" else 40,
+            "maxSize": 150 if layer == "base" else 180,
+            "x": float(cfg(layer, "x")) if "x" in DEFAULTS[layer] else 0.0,
+            "y": float(cfg(layer, "y")) if "y" in DEFAULTS[layer] else 0.0,
+        })
+    touch_result = touch_badge_editor(
+        width=values["width"], height=values["height"], background="#b95f7d",
+        layers=touch_layers, key="touch_badge_canvas", default=None,
+    )
+    if touch_result and touch_result.get("nonce") != st.session_state.get("last_touch_nonce"):
+        st.session_state["last_touch_nonce"] = touch_result.get("nonce")
+        changed_component = touch_result.get("component")
+        if touch_result.get("action") == "delete" and changed_component != "base":
+            hidden_components.add(changed_component)
+            st.session_state["hidden_components"] = sorted(hidden_components)
+        elif touch_result.get("action") == "update" and changed_component in COMPONENT_PREFIX:
+            for field in ("size", "x", "y"):
+                if field in touch_result and field in DEFAULTS[changed_component]:
+                    st.session_state[f"cfg_{changed_component}_{field}"] = touch_result[field]
+                    st.session_state.pop(f"edit_{COMPONENT_PREFIX[changed_component]}_{field}", None)
+        st.rerun()
+else:
+    st.caption("Edit below—the preview stays visible while you make changes.")
+    svg = preview_svg(values, base_colour)
+    st.markdown(
+        f'<div class="sticky-preview"><div class="preview-shell">'
+        f'<div class="preview-head"><strong>LIVE PREVIEW</strong><span>{values["width"]:.1f} × {values["height"]:.1f} mm</span></div>'
+        f'<div class="preview-art">{svg}</div></div></div>',
+        unsafe_allow_html=True,
+    )
+
+if hidden_components:
+    st.warning("Hidden parts: " + ", ".join(layer.replace("_", " ").title() for layer in sorted(hidden_components)))
+    if st.button("Restore all deleted parts", use_container_width=True):
+        st.session_state["hidden_components"] = []
+        st.rerun()
 
 
 with st.expander("1. Text, shape and fonts", expanded=True):
@@ -160,18 +208,22 @@ with st.expander("1. Text, shape and fonts", expanded=True):
         st.selectbox("Profession font", font_names, key="content_profession_font")
         st.text_input("Additional text (optional)", max_chars=32, key="content_extra")
         st.selectbox("Additional text font", font_names, key="content_extra_font", disabled=not extra_text)
+        if "Consolas" not in FONT_FILES:
+            st.caption("To enable exact Consolas, upload your licensed file as Consolas.ttf beside app.py.")
 
 
 component_options = {"Badge overall": "base"}
-if SHAPES[shape_name].get("white"):
+if SHAPES[shape_name].get("white") and "border" not in hidden_components:
     component_options["White border"] = "border"
-component_options["Name line 1"] = "name"
-if name2:
+if "name" not in hidden_components:
+    component_options["Name line 1"] = "name"
+if name2 and "name2" not in hidden_components:
     component_options["Name line 2"] = "name2"
-component_options["Profession"] = "profession"
-if extra_text:
+if "profession" not in hidden_components:
+    component_options["Profession"] = "profession"
+if extra_text and "extra_text" not in hidden_components:
     component_options["Additional text"] = "extra_text"
-if symbol_name != "No symbol":
+if symbol_name != "No symbol" and "symbol" not in hidden_components:
     component_options["Symbol"] = "symbol"
 if st.session_state.get("edit_component_choice") not in component_options:
     st.session_state["edit_component_choice"] = next(iter(component_options))
