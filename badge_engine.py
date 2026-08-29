@@ -169,6 +169,46 @@ SYMBOLS = {
     "Fish": ["path_4b7823c463d5c4408907b976ffe0a83b"],
     "Turtle": ["path_4a5769889d0781235562ae1b129f2c38"],
 }
+
+# Extra education and care symbols supplied as a second vector sheet.
+# A few designs contain several independent paths; keeping those path IDs
+# together makes each complete design appear as one selectable symbol.
+NEW_SYMBOL_SHEET = ROOT / "symbols-3.svg"
+NEW_SYMBOLS = {
+    "People Care": ["path_4b6649bffb8815e87a4d101795b2001e"],
+    "Home Support": [
+        "path_7307190a9faa3b3738a860d983a08602",
+        "path_6f1df7161037a7b9249e45ece4347751",
+        "path_7cdcaadebc4de2f998ca9c12d87c8cd9",
+        "path_4f6f03aa6294302ce516c459a4c9e321",
+        "path_991c8a7c422476d1839f3e52f16c26ef",
+        "path_3c825de9d07256dc6d6b76f6113431a9",
+    ],
+    "Education Home": ["path_88061a2144bd562d8b15be26b490e897"],
+    "Childcare Classroom": ["path_5584df8fbd931447396017ef724bb4df"],
+    "Star Team": ["path_8ce2b30a464551b82d6e85fd6b6bc5d1"],
+    "Early Learning Classroom": ["path_e3a57ed500a65e52f29a809b47ae361d"],
+    "Star Student Group": ["path_46ebb8e43cb1a3bcde9098016ecb04b6"],
+    "Staff ID": ["path_7db7e49d2adc620d097813338dba74ff"],
+    "Learning Ideas": ["path_09da6e5aa43370656fc111d1f28eb50c"],
+    "Mentoring": ["path_d3c5c4c227d69948c831ce1f29031b72"],
+    "Caring Apple": ["path_0df2e91f5ea94f88c5218c81c7ce83da"],
+    "Shared Reading": ["path_60063afb17b4936a4b96bba18be13338"],
+    "Graduate Books": ["path_7505a52f6c93181321d1c531dc799586"],
+    "Art and Craft": ["path_94bccbafdaa2a0b4fd5ca3e1e0611b47"],
+    "Reading Teacher": ["path_68a77e4e857f41996eb0356ca0387ac2"],
+    "Music": ["path_93f68dd02ea5ffc2e51fcb877b37c854"],
+    "Sport and Movement": ["path_bb10769a95d1f87dbcffa53030150e5c"],
+    "Mathematics": ["path_ee1d26ada409c08c93a12bb8e4459ebe"],
+    "Science": ["path_ebe6104b4818489558764a5587f1951a"],
+    "Graduate": ["path_e6cbb8ac3ebd79adcc351c7c2a9d3e4d"],
+    "Open Book Bookmark": ["path_6dc8e86f1a508cf4cc31936c059af8fb"],
+    "Counselling": ["path_627fe73bbf93db933c58fae454ad8421"],
+    "Tutoring": ["path_08541cbf95a1e75d0cbe164d0311cd1e"],
+    "Teamwork": ["path_6494c67be98e385ddee02e345f652c29"],
+    "Bookshelf": ["path_4f0e9f19c592d5040fe72ae21de472bd"],
+}
+SYMBOLS.update(NEW_SYMBOLS)
 LAYER_FILES = {
     "base": "01_BASE.svg",
     "border": "02_WHITE_BORDER.svg",
@@ -206,15 +246,16 @@ def _font_data(font_name: str):
     }
 
 
-@lru_cache(maxsize=1)
-def _symbol_sheet_paths() -> dict[str, str]:
-    root = ET.parse(SYMBOL_SHEET).getroot()
+@lru_cache(maxsize=None)
+def _symbol_sheet_paths(source: Path = SYMBOL_SHEET) -> dict[str, str]:
+    root = ET.parse(source).getroot()
     return {element.attrib.get("id"): element.attrib.get("d", "") for element in root.iter() if element.tag.endswith("path")}
 
 
 @lru_cache(maxsize=None)
 def _symbol_data(symbol_name: str) -> tuple[tuple[str, ...], tuple[float, float, float, float]]:
-    sheet_paths = _symbol_sheet_paths()
+    source = NEW_SYMBOL_SHEET if symbol_name in NEW_SYMBOLS else SYMBOL_SHEET
+    sheet_paths = _symbol_sheet_paths(source)
     path_ids = SYMBOLS[symbol_name]
     missing = [path_id for path_id in path_ids if path_id not in sheet_paths]
     if missing:
